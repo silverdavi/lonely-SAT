@@ -1,0 +1,53 @@
+# Documentation files (keep only README.md)
+*.md
+!README.md
+CITATION.cff
+REPOSITORY_READY.md
+
+# Compiled files
+*.o
+*.out
+gen_temp
+gen
+g[0-9]*
+test_gen
+
+# CNF files (can be large)
+*.cnf
+
+# Result files
+result_temp.txt
+*.result
+*.time
+
+# LaTeX auxiliary files
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.toc
+paper/*.bbl
+paper/*.blg
+paper/*.synctex.gz
+paper/*.fls
+paper/*.fdb_latexmk
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Editor files
+.vscode/
+.idea/
+*.sublime-*
+
+# Logs
+*.log
+logs/
+
+# Temporary and backup files
+*~
+*.bak
+*.tmp

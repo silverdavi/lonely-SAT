@@ -1,0 +1,117 @@
+#!/bin/bash
+# Simple verification script for Lonely Runner Conjecture
+# Usage: ./verify.sh K [PRIME]
+#   K: number of runners minus 1 (e.g., 7 for 8 runners)
+#   PRIME: specific prime to verify (optional, will verify all if omitted)
+
+set -e
+
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 K [PRIME]"
+    echo "  K: runner parameter (e.g., 7 for 8 runners)"
+    echo "  PRIME: specific prime to verify (optional)"
+    echo ""
+    echo "Examples:"
+    echo "  $0 7 163          # Verify k=7, p=163 (hardest case)"
+    echo "  $0 7              # Verify all primes for k=7"
+    exit 1
+fi
+
+K=$1
+PRIME=$2
+
+# Prime lists for each k
+get_primes() {
+    case $1 in
+        4) echo "17 19 23 29 31 37" ;;
+        5) echo "23 29 31 37 41 43 47 53 59 61 67 71" ;;
+        6) echo "13 19 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97 101 103" ;;
+        7) echo "31 37 43 47 53 59 61 67 71 73 79 83 89 97 101 103 107 109 113 127 131 137 139 149 151 157 163" ;;
+        8) echo "31 37 41 43 47 53 59 61 67 71 73 79 83 89 97 101 103 107 109 113 127 131 137 139 149 151 157 163 167 173 179 181 191 193 197 199 211 223 227 229 233 239 241 251" ;;
+        9) echo "31 37 41 43 47 53 59 61 67 71 73 79 83 89 97 101 103 107 109 113 127 131 137 139 149 151 157 163 167 173 179 181 191 193 197 199 211 223 227 229 233 239 241 251 257 263 269 271 277 281 283 293 307 311 313 317 331 337 347 349 353 359 367 373 379 383 389 397 401 409 419 421 431 433 439 443 449 457 461 463 467 479 487 491 499 503" ;;
+        10) echo "31 37 41 43 47 53 59 61 67 71 73 79 83 89 97 101 103 107 109 113 127 131 137 139 149 151 157 163 167 173 179 181 191 193 197 199 211 223 227 229 233 239 241 251 257 263 269 271 277 281 283 293 307 311 313 317 331 337 347 349 353 359 367 373 379 383 389 397 401 409 419 421 431 433 439 443 449 457 461 463 467 479 487 491 499 503 509 521 523 541 547 557 563 569 571 577 587 593 599 601 607 613 617 619 631" ;;
+        11) echo "31 37 41 43 47 53 59 61 67 71 73 79 83 89 97 101 103 107 109 113 127 131 137 139 149 151 157 163 167 173 179 181 191 193 197 199 211 223 227 229 233 239 241 251 257 263 269 271 277 281 283 293 307 311 313 317 331 337 347 349 353 359 367 373 379 383 389 397 401 409 419 421 431 433 439 443 449 457 461 463 467 479 487 491 499 503 509 521 523 541 547 557 563 569 571 577 587 593 599 601 607 613 617 619 631 641 643 647 653 659 661 673 677 683 691 701 709 719 727 733 739 743 751 757 761 769 773 787 797 809 811 821 823 827 829 839 853 857 859 863 877 881 883 887 907 911 919 929 937 941 947 953 967 971 977 983 991 997" ;;
+        12) echo "31 37 41 43 47 53 59 61 67 71 73 79 83 89 97 101 103 107 109 113 127 131 137 139 149 151 157 163 167 173 179 181 191 193 197 199 211 223 227 229 233 239 241 251 257 263 269 271 277 281 283 293 307 311 313 317 331 337 347 349 353 359 367 373 379 383 389 397 401 409 419 421 431 433 439 443 449 457 461 463 467 479 487 491 499 503 509 521 523 541 547 557 563 569 571 577 587 593 599 601 607 613 617 619 631 641 643 647 653 659 661 673 677 683 691 701 709 719 727 733 739 743 751 757 761 769 773 787 797 809 811 821 823 827 829 839 853 857 859 863 877 881 883 887 907 911 919 929 937 941 947 953 967 971 977 983 991 997 1009 1013 1019 1021 1031 1033 1039 1049 1051 1061 1063 1069 1087 1091 1093 1097 1103 1109 1117 1123 1129 1151 1153 1163 1171 1181 1187 1193 1201 1213 1217 1223" ;;
+        *) echo ""; return 1 ;;
+    esac
+}
+
+verify_single() {
+    local k=$1
+    local p=$2
+    
+    echo "Verifying k=$k, p=$p..."
+    
+    # Compile
+    g++ -O3 -march=native -DK=$k -DPRIME=$p -o gen_temp src/lonely_cnf_generator.cpp 2>/dev/null
+    
+    if [ $? -ne 0 ]; then
+        echo "  ❌ Compilation failed"
+        return 1
+    fi
+    
+    # Generate and solve
+    ./gen_temp 2>/dev/null | ./solver/kissat --quiet > result_temp.txt 2>&1
+    
+    # Check result
+    if grep -q "^s UNSATISFIABLE" result_temp.txt; then
+        echo "  ✅ UNSAT (proof successful)"
+        rm -f gen_temp result_temp.txt
+        return 0
+    elif grep -q "^s SATISFIABLE" result_temp.txt; then
+        echo "  ⚠️  SAT (counterexample found!)"
+        rm -f gen_temp result_temp.txt
+        return 1
+    else
+        echo "  ❌ Unknown result"
+        rm -f gen_temp result_temp.txt
+        return 1
+    fi
+}
+
+# Main
+echo "============================================"
+echo "Lonely Runner Conjecture Verification"
+echo "============================================"
+echo ""
+
+if [ -n "$PRIME" ]; then
+    # Single prime
+    verify_single $K $PRIME
+else
+    # All primes for this k
+    PRIMES=($(get_primes $K))
+    NUM=${#PRIMES[@]}
+    
+    if [ $NUM -eq 0 ]; then
+        echo "No prime list available for k=$K"
+        exit 1
+    fi
+    
+    echo "k=$K ($((K+1)) runners) - $NUM primes to verify"
+    echo ""
+    
+    verified=0
+    failed=0
+    
+    for p in "${PRIMES[@]}"; do
+        if verify_single $K $p; then
+            ((verified++))
+        else
+            ((failed++))
+        fi
+    done
+    
+    echo ""
+    echo "============================================"
+    echo "Results: $verified/$NUM verified"
+    
+    if [ $failed -eq 0 ]; then
+        echo "✅ All primes verified UNSAT"
+        echo "Lonely Runner Conjecture holds for k=$K"
+    else
+        echo "⚠️  $failed unexpected results"
+    fi
+    echo "============================================"
+fi
+
