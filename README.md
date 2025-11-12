@@ -4,11 +4,11 @@ This repository contains the code and paper for verifying the Lonely Runner Conj
 
 ## Overview
 
-The Lonely Runner Conjecture, introduced by Wills (1967), concerns k+1 runners with distinct constant speeds on a unit circular track. We extend the computational verification from 8 runners (Rosenfeld, 2025) to **13 runners** using a SAT-based approach that achieves speedups of up to **6 orders of magnitude**.
+The Lonely Runner Conjecture, introduced by Wills (1967), concerns k+1 runners with distinct constant speeds on a unit circular track. We extend the computational verification from 8 runners (Rosenfeld, 2025) to **14 runners** using a SAT-based approach that achieves speedups of up to **6 orders of magnitude**.
 
 ## Key Results
 
-We provide the **first proofs** for 9, 10, 11, 12, and 13 runners.
+We provide the **first proofs** for 9, 10, 11, 12, 13, and 14 runners.
 
 | k   | Runners | Primes | Time     | Status                  |
 |-----|---------|--------|----------|-------------------------|
@@ -21,6 +21,7 @@ We provide the **first proofs** for 9, 10, 11, 12, and 13 runners.
 | **10**  | **11**      | **105**    | **21.68s**   | **New (this work)**         |
 | **11**  | **12**      | **158**    | **75.32s**   | **New (this work)**         |
 | **12**  | **13**      | **190**    | **155.36s**  | **New (this work)**         |
+| **13**  | **14**      | **241**    | **394.20s**  | **New (this work)**         |
 
 **Hardware:** Apple M4 Max (16 performance cores, 4 efficiency cores)  
 **Execution:** Parallel across all available cores
@@ -112,6 +113,7 @@ Prime lists are determined using Rosenfeld's method: select primes such that the
 - k=10: 105 primes (31 to 631)
 - k=11: 158 primes (31 to 997)
 - k=12: 190 primes (31 to 1193)
+- k=13: 241 primes (31 to 1597)
 
 ## Citation
 
@@ -119,7 +121,7 @@ If you use this work, please cite:
 
 ```bibtex
 @article{Silver2025LonelyRunner,
-  title={Extending the Lonely Runner Conjecture to 13 Runners via SAT Solving},
+  title={Extending the Lonely Runner Conjecture to 14 Runners via SAT Solving},
   author={Silver, David H.},
   journal={arXiv preprint},
   year={2025}
@@ -144,11 +146,10 @@ This work builds directly on the foundational approach by Matthieu Rosenfeld and
 
 ## Contact
 
-David H. Silver  
-[Your contact information or GitHub profile]
+David H. Silver
 
 ---
 
-**Status:** Verified through k=12 (13 runners) ✓  
+**Status:** Verified through k=13 (14 runners) ✓  
 **Last updated:** November 2025
 

@@ -36,7 +36,6 @@ paper/*.fdb_latexmk
 Thumbs.db
 *.swp
 *.swo
-*~
 
 # Editor files
 .vscode/
