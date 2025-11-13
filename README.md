@@ -116,11 +116,12 @@ The negative result has value: it shows boundaries of SAT solver effectiveness a
 ## Citation
 
 ```bibtex
-@article{Silver2025LonelyRunnerSAT,
+@misc{Silver2025LonelyRunnerSAT,
   title={A SAT-Based Encoding for the Lonely Runner Conjecture: Performance Analysis},
   author={Silver, David H.},
   year={2025},
-  note={Negative result: SAT encoding is correct but slower than specialized backtracking}
+  howpublished={\url{https://github.com/silverdavi/lonely-SAT}},
+  note={Paper: \url{https://github.com/silverdavi/lonely-SAT/blob/main/paper/paper.pdf}}
 }
 ```
 
