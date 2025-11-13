@@ -162,39 +162,11 @@ The SAT approach is consistently slower despite using a state-of-the-art solver 
 \item \textbf{Symmetry:} The problem has substantial symmetry (velocity pairs, permutation invariance) that SAT solvers handle inefficiently without explicit symmetry breaking.
 \end{enumerate}
 
-\section{Discussion}
-
-This work demonstrates that SAT-based verification is not universally superior to specialized algorithms. For the Lonely Runner verification problem:
-
-\begin{itemize}
-\item The verification condition can be correctly encoded as SAT
-\item Modern SAT solvers provide correct results
-\item However, performance is substantially worse than domain-specific backtracking
-\end{itemize}
-
-\textbf{When might SAT be competitive?}
-
-\begin{itemize}
-\item If theoretical improvements reduce the required prime set, making individual instances trivial
-\item If substantial symmetry breaking or problem-specific learned clauses can be added
-\item If the verification is reformulated to exploit SAT solver strengths (e.g., unsatisfiable core analysis)
-\item For parallelization across multiple $(k,p)$ instances, where SAT's stateless nature may help
-\end{itemize}
-
-\textbf{Lessons:}
-
-\begin{enumerate}
-\item Correctness and performance are separate concerns. Our encoding is correct but slow.
-\item Black-box SAT application without domain knowledge is unlikely to beat specialized algorithms
-\item Performance validation on both SAT and UNSAT instances is essential
-\item Problem-specific backtracking with pruning can be highly effective
-\end{enumerate}
-
 \section{Conclusion}
 
-We have developed a provably correct SAT encoding of Rosenfeld's Lonely Runner verification procedure. The encoding achieves 100\% agreement with his implementation on all tested instances. However, the SAT approach is 1.6--677$\times$ slower than optimized backtracking, demonstrating that SAT solvers are not universally superior for all combinatorial verification tasks.
+We developed a SAT encoding of Rosenfeld's Lonely Runner verification that is logically correct (100\% agreement on 37 tested instances) but substantially slower (1.6--681$\times$) than specialized backtracking. The performance gap stems from problem structure that favors domain-specific pruning over general CDCL search.
 
-This negative result has value: it shows the boundaries of SAT solver effectiveness and highlights the continued importance of problem-specific algorithms.
+This negative result demonstrates that black-box SAT application does not universally outperform problem-specific algorithms, even with modern solvers and optimized encodings.
 
 \section*{Acknowledgments}
 
