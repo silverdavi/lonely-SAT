@@ -1,6 +1,9 @@
-// Lonely Runner Cover Search via SAT
-// Encodes the search as CNF in DIMACS format.
-// Author: adapted from Matthieu Rosenfeld's search code.
+// SAT encoding for Lonely Runner Conjecture verification
+// Translates Rosenfeld's verification into CNF (DIMACS format)
+// 
+// David H. Silver, 2025
+// Based on Matthieu Rosenfeld's verification approach (arXiv:2509.14111)
+// GitHub Copilot was used for code formatting and boilerplate
 
 #include <iostream>
 #include <vector>
@@ -8,6 +11,8 @@
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <unordered_map>
+#include <chrono>
 using namespace std;
 
 #ifndef PRIME
@@ -25,7 +30,7 @@ constexpr int n = k + 1;
 constexpr int Q = n * prime;
 constexpr int maxM = Q / 2;
 
-// ------------ Simple CNF builder ------------
+// CNF builder
 
 struct CNF {
     int numVars = 0;
@@ -47,118 +52,182 @@ struct CNF {
     }
 };
 
-// Sequential counter encoding: at most R literals in 'xs' are true.
-// xs are literals (signed ints), not necessarily positive vars.
-// Implementation of Sinz-style encoding.
-void addAtMostK(CNF& cnf, const vector<int>& xs, int R) {
+// Sequential counter with both directions: s[n][R] true iff ≥R of xs true
+// Enforces both "at most R" and enables "at least R" via return value
+int buildSequentialCounter(CNF& cnf, const vector<int>& xs, int R) {
     int n = (int)xs.size();
-    if (R >= n || n == 0) return; // no constraint needed
+    if (R > n || R <= 0 || n == 0) return 0;
 
-    // s[i][j] is auxiliary var for "among first i literals, at least j are true"
-    // 1 <= i <= n, 1 <= j <= R
+    // s[i][j] = true iff at least j of the first i literals are true
     vector<vector<int>> s(n + 1, vector<int>(R + 1, 0));
 
-    // i = 1, j = 1: x1 -> s_1,1
+    // Base: i=1
     s[1][1] = cnf.newVar();
-    // x1 -> s11  (¬x1 ∨ s11)
-    cnf.addClause({ -xs[0], s[1][1] });
+    cnf.addClause({ -xs[0], s[1][1] });      // x1 -> s[1][1]
+    cnf.addClause({ -s[1][1], xs[0] });      // s[1][1] -> x1
 
-    // i > 1
+    // DP
     for (int i = 2; i <= n; ++i) {
         int xi = xs[i - 1];
 
-        // j = 1
-        s[i][1] = cnf.newVar();
-        // xi -> s_i1  (¬xi ∨ s_i1)
-        cnf.addClause({ -xi, s[i][1] });
-        // s_(i-1)1 -> s_i1  (¬s_(i-1)1 ∨ s_i1)
-        cnf.addClause({ -s[i - 1][1], s[i][1] });
-
-        // For 2 <= j <= min(i, R)
-        int maxJ = min(i, R);
-        for (int j = 2; j <= maxJ; ++j) {
+        for (int j = 1; j <= min(i, R); ++j) {
             s[i][j] = cnf.newVar();
-            // s_(i-1)j -> s_ij      (¬s_(i-1)j ∨ s_ij)
-            if (s[i - 1][j] != 0) {
-                cnf.addClause({ -s[i - 1][j], s[i][j] });
+
+            // Forward: s[i][j] can be made true if...
+            if (j <= i - 1 && s[i - 1][j] != 0) {
+                cnf.addClause({ -s[i - 1][j], s[i][j] });  // s[i-1][j] -> s[i][j]
             }
-            // (xi ∧ s_(i-1)(j-1)) -> s_ij
-            // is encoded as (¬xi ∨ ¬s_(i-1)(j-1) ∨ s_ij)
-            cnf.addClause({ -xi, -s[i - 1][j - 1], s[i][j] });
+            if (j >= 2 && s[i - 1][j - 1] != 0) {
+                cnf.addClause({ -xi, -s[i - 1][j - 1], s[i][j] });  // (xi ∧ s[i-1][j-1]) -> s[i][j]
+            }
+            if (j == 1) {
+                cnf.addClause({ -xi, s[i][j] });  // xi -> s[i][1]
+            }
+
+            // Backward: if s[i][j] is true, it must be justified
+            if (j == 1) {
+                // s[i][1] -> (s[i-1][1] ∨ xi)
+                if (s[i - 1][1] != 0) {
+                    cnf.addClause({ -s[i][j], s[i - 1][1], xi });
+                } else {
+                    cnf.addClause({ -s[i][j], xi });
+                }
+            } else if (j <= i - 1) {
+                // s[i][j] -> (s[i-1][j] ∨ (xi ∧ s[i-1][j-1]))
+                if (s[i - 1][j] != 0) {
+                    cnf.addClause({ -s[i][j], s[i - 1][j], xi });
+                }
+                if (s[i - 1][j - 1] != 0 && s[i - 1][j] != 0) {
+                    cnf.addClause({ -s[i][j], s[i - 1][j], s[i - 1][j - 1] });
+                }
+            }
         }
 
-        // Exceeding R: if prefix already has ≥R and xi is true, forbidden.
-        // That is (¬xi ∨ ¬s_(i-1)R) for i >= R+1.
-        if (i - 1 >= R) {
+        // At most R: forbid having ≥R trues in prefix and adding xi
+        if (s[i - 1][R] != 0) {
             cnf.addClause({ -xi, -s[i - 1][R] });
         }
     }
+
+    return s[n][R];
 }
 
-// At least Kmin literals in xs must be true.
-// Direct encoding: every subset of size (N-Kmin+1) must have at least one true.
-// This is exponential but works for small (N-Kmin).
-void addAtLeastK(CNF& cnf, const vector<int>& xs, int Kmin) {
-    int N = (int)xs.size();
-    if (Kmin <= 0) return;  // always satisfied
-    if (Kmin > N) {
-        cnf.addClause({});  // unsatisfiable
-        return;
-    }
-    
-    int maxFalse = N - Kmin;  // can have at most this many false
-    
-    // If maxFalse is small, use direct encoding
-    // For each subset of size (maxFalse + 1), at least one must be true
-    if (maxFalse >= N / 2 || maxFalse > 15) {
-        // Too many clauses, fall back to a different method
-        // For now, just use the Sinz-based approach with helper vars
-        vector<int> helperVars;
-        helperVars.reserve(N);
-        for (int lit : xs) {
-            int h = cnf.newVar();
-            // h <-> ¬lit
-            cnf.addClause({ -h, -lit });  
-            cnf.addClause({ h, lit });    
-            helperVars.push_back(h);
-        }
-        addAtMostK(cnf, helperVars, maxFalse);
-        return;
-    }
-    
-    // Direct encoding: every (maxFalse+1)-subset must have ≥1 true
-    function<void(int, vector<int>&)> generate;
-    generate = [&](int start, vector<int>& subset) {
-        if ((int)subset.size() == maxFalse + 1) {
-            // Add clause: at least one of subset must be true
-            cnf.addClause(subset);
-            return;
-        }
-        for (int i = start; i < N; ++i) {
-            subset.push_back(xs[i]);
-            generate(i + 1, subset);
-            subset.pop_back();
-        }
-    };
-    
-    vector<int> subset;
-    generate(0, subset);
+// At most R of xs are true
+void addAtMostK(CNF& cnf, const vector<int>& xs, int R) {
+    if ((int)xs.size() == 0 || R >= (int)xs.size()) return;
+    buildSequentialCounter(cnf, xs, R);  // Build counter, don't assert s[n][R]
 }
 
-// Exactly-K on literals xs: at most K and at least K.
+// Exactly K of xs must be true
 void addExactlyK(CNF& cnf, const vector<int>& xs, int Kexact) {
     int N = (int)xs.size();
-    if (Kexact < 0 || Kexact > N) return;
-    if (N == 0) return;
+    if (Kexact < 0 || Kexact > N || N == 0) return;
 
-    // at most Kexact
-    addAtMostK(cnf, xs, Kexact);
-
-    // at least Kexact
-    addAtLeastK(cnf, xs, Kexact);
+    int sAtLeastK = buildSequentialCounter(cnf, xs, Kexact);
+    if (sAtLeastK != 0) {
+        cnf.addClause({ sAtLeastK });  // Force ≥K
+    }
 }
 
-// ------------ Problem-specific encoding ------------
+// Preprocessing: dominance reduction
+
+vector<int> getPrimeDivisors(int n) {
+    vector<int> divisors;
+    if (n == 3 || n == 5 || n == 7 || n == 11 || n == 13) {
+        divisors.push_back(n);
+    } else if (n == 4 || n == 8 || n == 16) {
+        divisors.push_back(2);
+    } else if (n == 6) {
+        divisors.push_back(2);
+        divisors.push_back(3);
+    } else if (n == 9) {
+        divisors.push_back(3);
+    } else if (n == 10) {
+        divisors.push_back(2);
+        divisors.push_back(5);
+    } else if (n == 12) {
+        divisors.push_back(2);
+        divisors.push_back(3);
+    } else if (n == 14) {
+        divisors.push_back(2);
+        divisors.push_back(7);
+    } else if (n == 15) {
+        divisors.push_back(3);
+        divisors.push_back(5);
+    }
+    return divisors;
+}
+
+// Check if velocity a dominates b (covers everything b does, GCD at least as restrictive)
+bool dominatesVelocity(int a, int b, const vector<bitset<maxM>>& nearZero, const vector<int>& primeDivisors) {
+    if ((nearZero[a] | nearZero[b]) != nearZero[a]) return false;
+    
+    for (int q : primeDivisors) {
+        if (b % q == 0 && a % q != 0) return false;
+    }
+    
+    return true;
+}
+
+vector<int> reduceCandidatesByDominance(const vector<int>& candidates, 
+                                         const vector<bitset<maxM>>& nearZero,
+                                         const vector<int>& primeDivisors) {
+    int numCand = candidates.size();
+    vector<bool> dominated(numCand, false);
+    
+    for (int i = 0; i < numCand; ++i) {
+        if (dominated[i]) continue;
+        for (int j = 0; j < numCand; ++j) {
+            if (i == j || dominated[j]) continue;
+            if (dominatesVelocity(candidates[i], candidates[j], nearZero, primeDivisors)) {
+                dominated[j] = true;
+            }
+        }
+    }
+    
+    vector<int> reduced;
+    for (int i = 0; i < numCand; ++i) {
+        if (!dominated[i]) reduced.push_back(candidates[i]);
+    }
+    return reduced;
+}
+
+vector<bitset<10000>> buildCoverageSets(const vector<int>& candidates,
+                                         const vector<bitset<maxM>>& nearZero) {
+    vector<bitset<10000>> cover;
+    cover.reserve(maxM);
+    
+    for (int t = 0; t < maxM; ++t) {
+        bitset<10000> coverSet;
+        for (int j = 0; j < (int)candidates.size(); ++j) {
+            if (nearZero[candidates[j]][t]) coverSet[j] = true;
+        }
+        cover.push_back(coverSet);
+    }
+    return cover;
+}
+
+vector<int> reduceTimesByDominance(const vector<bitset<10000>>& cover) {
+    int numTimes = cover.size();
+    vector<bool> redundant(numTimes, false);
+    
+    for (int t1 = 0; t1 < numTimes; ++t1) {
+        if (redundant[t1]) continue;
+        for (int t2 = 0; t2 < numTimes; ++t2) {
+            if (t1 == t2 || redundant[t2]) continue;
+            // If cover[t1] ⊆ cover[t2], then t2 redundant (clause implied)
+            if ((cover[t1] | cover[t2]) == cover[t2]) redundant[t2] = true;
+        }
+    }
+    
+    vector<int> essential;
+    for (int t = 0; t < numTimes; ++t) {
+        if (!redundant[t]) essential.push_back(t);
+    }
+    return essential;
+}
+
+// Main encoding
 
 int main() {
     ios::sync_with_stdio(false);
@@ -169,14 +238,13 @@ int main() {
          << ", Q = " << Q
          << ", maxM = " << maxM << "\n";
 
-    // Precompute nearZero as in the original program
+    // Precompute coverage: nearZero[v][t] = (||tv/Q|| < 1/n)
     vector<bitset<maxM>> nearZero;
     nearZero.reserve(maxM + 1);
 
     for (int i = 0; i <= maxM; ++i) {
         bitset<maxM> currLine;
         for (int t = 1; t <= maxM; ++t) {
-            // || t*i / Q || < 1/n  (via the same arithmetic as original code)
             int ti = (t * i) % Q;
             bool close = (ti * n < Q) || ((Q - ti) * n < Q);
             currLine[maxM - t] = close;
@@ -184,49 +252,72 @@ int main() {
         nearZero.push_back(currLine);
     }
 
-    // Build candidate velocity list: i in [1..maxM], i % prime != 0
-    vector<int> candidates;           // candidate index -> velocity value i
+    auto t_start = chrono::high_resolution_clock::now();
+
+    // Initial candidates: [1..maxM] \ pZ
+    vector<int> candidates;
     candidates.reserve(maxM);
     for (int i = 1; i <= maxM; ++i) {
         if (i % prime == 0) continue;
         candidates.push_back(i);
     }
 
+    int numCandidatesInitial = (int)candidates.size();
+    cerr << "Initial candidates: " << numCandidatesInitial << "\n";
+
+    vector<int> primeDivisors = getPrimeDivisors(n);
+    
+    // Preprocessing: velocity dominance
+    auto t_dom_start = chrono::high_resolution_clock::now();
+    candidates = reduceCandidatesByDominance(candidates, nearZero, primeDivisors);
+    auto t_dom_end = chrono::high_resolution_clock::now();
+    
+    cerr << "After velocity dominance: " << candidates.size()
+         << " (eliminated " << (numCandidatesInitial - candidates.size()) << ")\n";
+    cerr << "  Time: " << chrono::duration<double>(t_dom_end - t_dom_start).count() << "s\n";
+
+    auto coverSets = buildCoverageSets(candidates, nearZero);
+    
+    // Preprocessing: time dominance
+    auto t_time_start = chrono::high_resolution_clock::now();
+    vector<int> essentialTimes = reduceTimesByDominance(coverSets);
+    auto t_time_end = chrono::high_resolution_clock::now();
+    
+    cerr << "After time dominance: " << essentialTimes.size()
+         << " (eliminated " << (maxM - essentialTimes.size()) << ")\n";
+    cerr << "  Time: " << chrono::duration<double>(t_time_end - t_time_start).count() << "s\n";
+
+    auto t_preprocess_end = chrono::high_resolution_clock::now();
+    cerr << "Total preprocessing: " 
+         << chrono::duration<double>(t_preprocess_end - t_start).count() << "s\n\n";
+
     int numCandidates = (int)candidates.size();
-    cerr << "Number of candidate velocities (not divisible by prime): "
-         << numCandidates << "\n";
 
     // CNF builder
     CNF cnf;
 
-    // SAT vars for "candidate j is chosen"
-    // xVars[j] is variable index (>0) in DIMACS; literal is +xVars[j] for "chosen".
+    // Variables: one per candidate
     vector<int> xVars(numCandidates);
     for (int j = 0; j < numCandidates; ++j) {
         xVars[j] = cnf.newVar();
     }
 
-    // ---- Coverage constraints ----
-    // For each time t (0..maxM-1), at least one chosen velocity covers t.
+    // Coverage clauses
     int uncoverable_count = 0;
-    for (int t = 0; t < maxM; ++t) {
+    for (int t : essentialTimes) {
         vector<int> clause;
         for (int j = 0; j < numCandidates; ++j) {
-            int v = candidates[j];
-            if (nearZero[v][t]) {
-                clause.push_back(+xVars[j]);
+            if (nearZero[candidates[j]][t]) {
+                clause.push_back(xVars[j]);
             }
         }
-        // If clause empty: this time t cannot be covered by any allowed velocity.
         if (clause.empty()) {
             uncoverable_count++;
-            // Add trivially UNSAT formula
             if (uncoverable_count == 1) {
-                // First uncoverable position - create contradiction
                 int dummy = cnf.newVar();
                 cnf.addClause({dummy});
                 cnf.addClause({-dummy});
-                cerr << "Position t = " << t << " is uncoverable (first of possibly more)\n";
+                cerr << "Uncoverable position found\n";
             }
         } else {
             cnf.addClause(clause);
@@ -234,42 +325,15 @@ int main() {
     }
 
     if (uncoverable_count > 0) {
-        cerr << "Total uncoverable positions: " << uncoverable_count << "\n";
-        cerr << "Instance is trivially UNSAT\n";
+        cerr << "Trivially UNSAT (" << uncoverable_count << " uncoverable)\n";
     }
 
-    // ---- Exactly k chosen ----
+    // Exactly k chosen
     addExactlyK(cnf, xVars, k);
 
-    // ---- GCD constraints from extraVerif ----
-    // For n=(k+1), we need: for each PRIME divisor q of n=(k+1), 
-    // at most k-2 chosen velocities are divisible by q.
-    // This encodes the condition gcd(S ∪ {Q}) = 1 for all (k-1)-subsets S.
-    
-    // Get prime divisors of n=(k+1)
-    vector<int> divisors;  // Will contain PRIME divisors of n=(k+1)
-    
-    // For n ≤ 12, we hardcode prime factorizations
-    if (n == 3 || n == 5 || n == 7 || n == 11) {
-        divisors.push_back(n);  // n is prime
-    } else if (n == 4) {
-        divisors.push_back(2);  // 4 = 2^2
-    } else if (n == 6) {
-        divisors.push_back(2);  // 6 = 2×3
-        divisors.push_back(3);
-    } else if (n == 8) {
-        divisors.push_back(2);  // 8 = 2^3
-    } else if (n == 9) {
-        divisors.push_back(3);  // 9 = 3^2
-    } else if (n == 10) {
-        divisors.push_back(2);  // 10 = 2×5
-        divisors.push_back(5);
-    } else if (n == 12) {
-        divisors.push_back(2);  // 12 = 2^2×3
-        divisors.push_back(3);
-    }
+    // GCD constraints: at most k-2 multiples of each prime dividing (k+1)
 
-    for (int d : divisors) {
+    for (int d : primeDivisors) {
         vector<int> lits;
         for (int j = 0; j < numCandidates; ++j) {
             int v = candidates[j];
@@ -285,18 +349,16 @@ int main() {
         }
     }
 
-    // ---- Output CNF in DIMACS format ----
+    // Output CNF
     cnf.printDIMACS(cout);
 
-    // Mapping for interpretation (to stderr, not stdout)
-    cerr << "\nc Variable-to-velocity mapping:\n";
+    // Variable mapping (to stderr)
+    cerr << "\nc Variable mapping:\n";
     for (int j = 0; j < numCandidates; ++j) {
         cerr << "c var " << xVars[j] << " <-> v = " << candidates[j] << "\n";
     }
     
-    cerr << "\nCNF Statistics:\n";
-    cerr << "  Variables: " << cnf.numVars << "\n";
-    cerr << "  Clauses: " << cnf.clauses.size() << "\n";
+    cerr << "\nCNF: " << cnf.numVars << " vars, " << cnf.clauses.size() << " clauses\n";
 
     return 0;
 }
