@@ -148,6 +148,18 @@ $k$ & $p$ & Result & Rosenfeld & SAT & Ratio \\
 
 All computations performed on an Apple M4 Max (16 performance cores, 4 efficiency cores).
 
+\subsection{Example: k=8, p=37}
+
+For $(k,p) = (8,37)$, both implementations correctly identify that a covering exists (SAT result):
+
+\paragraph{Rosenfeld's covering tuple:} $\{9, 2, 7, 27, 45, 36, 63, 117\}$
+
+\paragraph{SAT solver's covering tuple:} $\{9, 18, 41, 45, 54, 63, 101, 108\}$
+
+Both tuples satisfy all constraints: exactly 8 velocities, all in $\{1,\ldots,166\} \setminus 37\mathbb{N}$, covering all 166 positions, with at most 6 multiples of 3 (since $9 = 3^2$). The existence of multiple valid covers demonstrates that the problem admits many solutions when SAT.
+
+Rosenfeld's backtracking finds its solution in 0.120 seconds through pruned search. The SAT solver finds a different solution in 6.5 seconds after exploring the constraint space via CDCL. Both are correct; the backtracking is 54$\times$ faster.
+
 \subsection{Analysis of Performance Gap}
 
 The SAT approach is consistently slower despite using a state-of-the-art solver and optimized encoding. Key factors:
