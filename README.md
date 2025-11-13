@@ -8,7 +8,7 @@ The Lonely Runner Conjecture concerns k+1 runners with distinct constant speeds 
 
 ## Key Results
 
-### Correctness: ✅ Validated
+### Correctness: 
 
 Our SAT encoding is logically equivalent to Rosenfeld's verification:
 
