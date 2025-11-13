@@ -6,6 +6,7 @@
 #include <vector>
 #include <bitset>
 #include <algorithm>
+#include <functional>
 #include <map>
 using namespace std;
 
@@ -57,12 +58,10 @@ void addAtMostK(CNF& cnf, const vector<int>& xs, int R) {
     // 1 <= i <= n, 1 <= j <= R
     vector<vector<int>> s(n + 1, vector<int>(R + 1, 0));
 
-    // i = 1, j = 1: s_1,1 <-> x1
+    // i = 1, j = 1: x1 -> s_1,1
     s[1][1] = cnf.newVar();
     // x1 -> s11  (¬x1 ∨ s11)
     cnf.addClause({ -xs[0], s[1][1] });
-    // s11 -> x1  (¬s11 ∨ x1)
-    cnf.addClause({ -s[1][1], xs[0] });
 
     // i > 1
     for (int i = 2; i <= n; ++i) {
@@ -80,7 +79,9 @@ void addAtMostK(CNF& cnf, const vector<int>& xs, int R) {
         for (int j = 2; j <= maxJ; ++j) {
             s[i][j] = cnf.newVar();
             // s_(i-1)j -> s_ij      (¬s_(i-1)j ∨ s_ij)
-            cnf.addClause({ -s[i - 1][j], s[i][j] });
+            if (s[i - 1][j] != 0) {
+                cnf.addClause({ -s[i - 1][j], s[i][j] });
+            }
             // (xi ∧ s_(i-1)(j-1)) -> s_ij
             // is encoded as (¬xi ∨ ¬s_(i-1)(j-1) ∨ s_ij)
             cnf.addClause({ -xi, -s[i - 1][j - 1], s[i][j] });
@@ -94,8 +95,57 @@ void addAtMostK(CNF& cnf, const vector<int>& xs, int R) {
     }
 }
 
+// At least Kmin literals in xs must be true.
+// Direct encoding: every subset of size (N-Kmin+1) must have at least one true.
+// This is exponential but works for small (N-Kmin).
+void addAtLeastK(CNF& cnf, const vector<int>& xs, int Kmin) {
+    int N = (int)xs.size();
+    if (Kmin <= 0) return;  // always satisfied
+    if (Kmin > N) {
+        cnf.addClause({});  // unsatisfiable
+        return;
+    }
+    
+    int maxFalse = N - Kmin;  // can have at most this many false
+    
+    // If maxFalse is small, use direct encoding
+    // For each subset of size (maxFalse + 1), at least one must be true
+    if (maxFalse >= N / 2 || maxFalse > 15) {
+        // Too many clauses, fall back to a different method
+        // For now, just use the Sinz-based approach with helper vars
+        vector<int> helperVars;
+        helperVars.reserve(N);
+        for (int lit : xs) {
+            int h = cnf.newVar();
+            // h <-> ¬lit
+            cnf.addClause({ -h, -lit });  
+            cnf.addClause({ h, lit });    
+            helperVars.push_back(h);
+        }
+        addAtMostK(cnf, helperVars, maxFalse);
+        return;
+    }
+    
+    // Direct encoding: every (maxFalse+1)-subset must have ≥1 true
+    function<void(int, vector<int>&)> generate;
+    generate = [&](int start, vector<int>& subset) {
+        if ((int)subset.size() == maxFalse + 1) {
+            // Add clause: at least one of subset must be true
+            cnf.addClause(subset);
+            return;
+        }
+        for (int i = start; i < N; ++i) {
+            subset.push_back(xs[i]);
+            generate(i + 1, subset);
+            subset.pop_back();
+        }
+    };
+    
+    vector<int> subset;
+    generate(0, subset);
+}
+
 // Exactly-K on literals xs: at most K and at least K.
-// "At least K" is "at most (N-K)" on their negations.
 void addExactlyK(CNF& cnf, const vector<int>& xs, int Kexact) {
     int N = (int)xs.size();
     if (Kexact < 0 || Kexact > N) return;
@@ -104,11 +154,8 @@ void addExactlyK(CNF& cnf, const vector<int>& xs, int Kexact) {
     // at most Kexact
     addAtMostK(cnf, xs, Kexact);
 
-    // at least Kexact: at most (N-Kexact) of the negations are true
-    vector<int> negs;
-    negs.reserve(N);
-    for (int lit : xs) negs.push_back(-lit);
-    addAtMostK(cnf, negs, N - Kexact);
+    // at least Kexact
+    addAtLeastK(cnf, xs, Kexact);
 }
 
 // ------------ Problem-specific encoding ------------
